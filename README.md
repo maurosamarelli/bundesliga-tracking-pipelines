@@ -88,7 +88,7 @@ V2_WRITE_ENABLED=1 spark-submit ... consumer_positions_pairs_v2.py
 | `V2_WRITE_PACED` | `1` | Paced background writer vs one burst |
 | `V2_ENRICH_PARTITIONS` | `8` | Enrichment shuffle partitions |
 | `V2_WRITER_MIN_WINDOW` | `2.0` | Floor on the publish window, seconds |
-| `V2_CHECKPOINT_DIR` | `/tmp/checkpoint-bundesliga-2022-2023-v2` | Structured Streaming checkpoint |
+| `V2_CHECKPOINT_DIR` | `checkpoint-bundesliga-2022-2023-v2` (relative to cwd) | Structured Streaming checkpoint |
 | `V2_KAFKA_BOOTSTRAP` | `localhost:9092` | Broker list |
 
 ### Match metadata

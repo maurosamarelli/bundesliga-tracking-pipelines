@@ -1,7 +1,7 @@
 # Batch (Databricks) vs Streaming (Kafka) alignment report
 
 **Date:** 2026-09-30
-**Batch source:** `pipeline_databricks_batch.zip` (extracted read-only to `/tmp/opencode/batch`)
+**Batch source:** `pipeline_databricks_batch.zip` (extracted read-only for analysis; never modified)
 **Streaming source of truth for the comparison:** `scripts/consumer_positions_pairs.py`
 **Reference only (final section):** the other consumers in `scripts/`
 

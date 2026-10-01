@@ -116,7 +116,7 @@ params = {
     # the two queries fight over the same offsets if both were ever run.
     "checkpoint-local-dir": os.environ.get(
         "V2_CHECKPOINT_DIR",
-        "/tmp/checkpoint-bundesliga-2022-2023-v2",
+        "checkpoint-bundesliga-2022-2023-v2",
     ),
     "processing-time-consumer": 30,
 
@@ -1528,8 +1528,13 @@ def banner():
 
 def run_stream():
     banner()
-    load_match_info()
+    # main() FIRST. It builds the SparkSession, and that has to exist before
+    # load_match_info(): consumer_utils.py builds its ATTACKING_DIRECTION /
+    # HALF_START_FRAME maps with F.lit() at module scope, and in Spark 4.x
+    # F.lit() asserts on a missing active SparkContext. The banner first so the
+    # configuration is visible even if session creation fails.
     main()
+    load_match_info()
     query = (
         input_df
         .writeStream
