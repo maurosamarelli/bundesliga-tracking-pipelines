@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+checkpoint-*/
+
+# Streaming runtime state
+.match-info/
+nohup.out
+
+# OS
+.DS_Store
