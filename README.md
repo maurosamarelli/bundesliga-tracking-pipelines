@@ -23,18 +23,22 @@ the two agree and where they cannot.
 ```
 raw        raw_positions / position_rows        one row per entity per frame
 bronze     bronze_positions                     attack direction, x_norm/y_norm, possession -> team id
-silver     silver_enrichment / silver_positions  ball distance, possession, pairing, target distance
-grouped    silver_positions_grouped              players[] per team, offside_line, play_state
-gold       gold_possessions                      possession sequences and aggregates
+silver     silver_enrichment                    ball distance, possession, pairing, target distance
+gold       gold_possessions                      possession sequences and aggregates (single-pass from silver)
 ```
+
+The batch pipeline no longer has a separate grouped silver layer — `gold_possessions`
+reads directly from `silver_positions_enrichment` with a single `groupBy` per frame
+and conditional aggregation, eliminating the intermediate tables and joins.
 
 ---
 
 ## Batch
 
-Databricks Declarative Pipelines. `batch/` must be uploaded as a workspace folder
-so the `transformations.schemas.silver_positions_schema` import resolves — that
-is why the schema lives at `batch/transformations/schemas/`, not `batch/schemas/`.
+Databricks Declarative Pipelines. The `batch/` folder maps directly to the
+pipeline's `transformations/` root: `batch/gold/` → `transformations/gold/`, etc.
+Schema constants (`SILVER_POSITIONS_SCHEMA`, `SILVER_OUTPUT_COLUMNS`) are inlined
+in `silver_enrichment.py`; no separate schema module is needed.
 
 ```python
 @dp.table(name="`bundesliga-2022-2023`.batch.raw_positions", ...)
@@ -42,7 +46,7 @@ is why the schema lives at `batch/transformations/schemas/`, not `batch/schemas/
 ```
 
 Tables: `raw_positions`, `match_info`, `bronze_positions`,
-`silver_positions_enrichment`, `silver_positions_grouped`, `gold_possessions`.
+`silver_positions_enrichment`, `gold_possessions`.
 
 Needs Databricks Runtime with PySpark, NumPy and Pandas. Tune the enrichment
 shuffle with the `enrich_partitions` Spark config (default 200).
