@@ -15,9 +15,9 @@ def match_info():
         .load("s3://bundesliga-2022-2023-data/matchinformation/")
         .select(
             F.col("General._MatchId").alias("match_id"),
-            F.col("General._HomeTeamId").alias("home_team_id"),
-            F.col("General._GuestTeamId").alias("guest_team_id"),
             F.col("Environment._PitchX").alias("pitch_x"),
             F.col("Environment._PitchY").alias("pitch_y"),
+            F.col("General._HomeTeamId").alias("home_team_id"),
+            F.col("General._GuestTeamId").alias("guest_team_id"),
         )
     )

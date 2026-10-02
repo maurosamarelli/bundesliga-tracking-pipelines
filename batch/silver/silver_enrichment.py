@@ -3,11 +3,44 @@ from pyspark.sql import functions as F
 import numpy as np
 import pandas as pd
 
-from transformations.schemas.silver_positions_schema import (
-    SILVER_POSITIONS_SCHEMA, SILVER_OUTPUT_COLUMNS,
+from pyspark.sql.types import (
+    StructType, StructField, StringType, LongType,
+    DoubleType, BooleanType, IntegerType,
 )
 
-TARGET_POINT = (52.5, 34.0)
+SILVER_POSITIONS_SCHEMA = StructType([
+    StructField("match_id", StringType(), True),
+    StructField("game_section", StringType(), True),
+    StructField("frame_id", LongType(), True),
+    StructField("team_id", StringType(), True),
+    StructField("person_id", StringType(), True),
+    StructField("x", DoubleType(), True),
+    StructField("y", DoubleType(), True),
+    StructField("x_norm", DoubleType(), True),
+    StructField("y_norm", DoubleType(), True),
+    StructField("distance", DoubleType(), True),
+    StructField("speed", DoubleType(), True),
+    StructField("acceleration", DoubleType(), True),
+    StructField("ball_possession", StringType(), True),
+    StructField("ball_status", IntegerType(), True),
+    StructField("ball_distance", DoubleType(), True),
+    StructField("has_possession", BooleanType(), True),
+    StructField("pair_player_id", StringType(), True),
+    StructField("pair_player_distance", DoubleType(), True),
+    StructField("closest_opponent_distance", DoubleType(), True),
+    StructField("target_distance", DoubleType(), True),
+])
+
+SILVER_OUTPUT_COLUMNS = [
+    "match_id", "game_section", "frame_id", "team_id", "person_id",
+    "x", "y", "x_norm", "y_norm", "distance", "speed", "acceleration",
+    "ball_possession", "ball_status",
+    "ball_distance", "has_possession",
+    "pair_player_id", "pair_player_distance",
+    "closest_opponent_distance", "target_distance",
+]
+
+TARGET_POINT_NORM = (105, 34)
 ENRICH_PARTITIONS = int(spark.conf.get("enrich_partitions", "200"))
 
 
@@ -40,8 +73,10 @@ def enrich_and_pair_batch(
     team_ids = df["team_id"].to_numpy(dtype=object)
     player_ids = df["person_id"].to_numpy(dtype=object)
     frame_ids = df["frame_id"].to_numpy(dtype=np.int64)
-    x_all = df["x_norm"].to_numpy(dtype=np.float64, na_value=np.nan)
-    y_all = df["y_norm"].to_numpy(dtype=np.float64, na_value=np.nan)
+    x_all = df["x"].to_numpy(dtype=np.float64, na_value=np.nan)
+    y_all = df["y"].to_numpy(dtype=np.float64, na_value=np.nan)
+    x_norm_all = df["x_norm"].to_numpy(dtype=np.float64, na_value=np.nan)
+    y_norm_all = df["y_norm"].to_numpy(dtype=np.float64, na_value=np.nan)
     possession_all = df["ball_possession"].to_numpy(dtype=object)
     source_ts = df["timestamp"].to_numpy()
     game_sections = df["game_section"].to_numpy(dtype=object)
@@ -71,12 +106,12 @@ def enrich_and_pair_batch(
     partner_distance = np.full(total, np.nan, dtype=np.float64)
     closest_opponent = np.full(total, np.nan, dtype=np.float64)
 
-    target_x, target_y = float(TARGET_POINT[0]), float(TARGET_POINT[1])
+    target_x, target_y = float(TARGET_POINT_NORM[0]), float(TARGET_POINT_NORM[1])
 
-    finite = np.isfinite(x_all) & np.isfinite(y_all)
+    finite = np.isfinite(x_norm_all) & np.isfinite(y_norm_all)
     with np.errstate(invalid="ignore", over="ignore"):
         target_distance = np.sqrt(
-            (x_all - target_x) ** 2 + (y_all - target_y) ** 2
+            (x_norm_all - target_x) ** 2 + (y_norm_all - target_y) ** 2
         )
     target_distance[~finite] = np.nan
 
@@ -98,6 +133,14 @@ def enrich_and_pair_batch(
         ball_rows = np.flatnonzero(is_ball[rows])
         if ball_rows.size:
             ball_row = int(ball_rows[0])
+            # Forward-fill ball_possession and ball_status from BALL row to all rows in frame
+            bp = possession_all[rows[ball_row]]
+            possession_team = None if _is_missing_scalar(bp) else bp
+            if possession_team is not None:
+                possession_raw[rows] = possession_team
+            bs_val = status_raw[rows[ball_row]]
+            if not pd.isna(bs_val):
+                status_raw[rows] = bs_val
             bx, by = gx[ball_row], gy[ball_row]
             if np.isfinite(bx) and np.isfinite(by):
                 with np.errstate(invalid="ignore", over="ignore"):
@@ -106,8 +149,6 @@ def enrich_and_pair_batch(
                     )
                 distances_to_ball[~g_finite] = np.nan
                 ball_distance[rows] = distances_to_ball
-                bp = possession_all[rows[ball_row]]
-                possession_team = None if _is_missing_scalar(bp) else bp
                 if possession_team is not None:
                     candidates = np.flatnonzero(
                         (g_team == possession_team)
@@ -211,19 +252,21 @@ def enrich_and_pair_batch(
         "frame_id": frame_ids[sequence],
         "team_id": team_ids[sequence],
         "person_id": player_ids[sequence],
-        "x_norm": x_all[sequence],
-        "y_norm": y_all[sequence],
-        "distance": d_all[sequence],
-        "speed": s_all[sequence],
-        "acceleration": a_all[sequence],
+        "x": np.round(x_all[sequence], 3),
+        "y": np.round(y_all[sequence], 3),
+        "x_norm": np.round(x_norm_all[sequence], 3),
+        "y_norm": np.round(y_norm_all[sequence], 3),
+        "distance": np.round(d_all[sequence], 3),
+        "speed": np.round(s_all[sequence], 3),
+        "acceleration": np.round(a_all[sequence], 3),
         "ball_possession": possession_raw[sequence],
         "ball_status": pd.array(status_raw[sequence], dtype="Int64"),
-        "ball_distance": ball_distance[sequence],
+        "ball_distance": np.round(ball_distance[sequence], 3),
         "has_possession": has_possession[sequence],
         "pair_player_id": partner[sequence],
-        "pair_player_distance": partner_distance[sequence],
-        "closest_opponent_distance": closest_opponent[sequence],
-        "target_distance": target_distance[sequence],
+        "pair_player_distance": np.round(partner_distance[sequence], 3),
+        "closest_opponent_distance": np.round(closest_opponent[sequence], 3),
+        "target_distance": np.round(target_distance[sequence], 3),
     })
     yield result.loc[:, SILVER_OUTPUT_COLUMNS]
 
@@ -241,30 +284,13 @@ def silver_enrichment():
             F.col("match_id").isNotNull()
             & F.col("frame_id").isNotNull()
             & F.col("team_id").isNotNull()
-            & (
-                F.col("person_id").isNotNull()
-                | F.col("team_id").isin("BALL", "referee")
-            )
+            & F.col("person_id").isNotNull()
+            & (F.col("team_id") != "referee")
         )
         .repartition(ENRICH_PARTITIONS, F.col("frame_id"))
         .mapInPandas(
             enrich_and_pair_batch,
             schema=SILVER_POSITIONS_SCHEMA,
-        )
-        .select(
-            "match_id", "game_section", "frame_id", "team_id", "person_id",
-            F.round("x_norm", 3).alias("x_norm"),
-            F.round("y_norm", 3).alias("y_norm"),
-            F.round("distance", 3).alias("distance"),
-            F.round("speed", 3).alias("speed"),
-            F.round("acceleration", 3).alias("acceleration"),
-            "ball_possession", "ball_status",
-            F.round("ball_distance", 3).alias("ball_distance"),
-            "has_possession",
-            "pair_player_id",
-            F.round("pair_player_distance", 3).alias("pair_player_distance"),
-            F.round("closest_opponent_distance", 3).alias("closest_opponent_distance"),
-            F.round("target_distance", 3).alias("target_distance"),
         )
     )
 
